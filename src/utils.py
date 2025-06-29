@@ -11,7 +11,7 @@ from sys import argv
 base_url = "https://api.aerobotics.com/farming/surveys/"
 
 
-def _get_orchard_info(orchard_id: str) -> requests.Response:
+def _get_orchard_info(orchard_id: str) -> dict:
     """
     This function will query the API to get the orchard survey information.
 
@@ -29,10 +29,17 @@ def _get_orchard_info(orchard_id: str) -> requests.Response:
     }
 
     response = requests.get(base_url + url, headers=headers)
-    return response
+    if response.status_code == 200:
+        response_data = response.json()['results'][0]
+        polygon_pairs = [list(map(float, p.split(','))) for p in 
+                         response_data['polygon'].split(' ')]
+        return {'status': response.status_code, 'id': response_data['id'],
+                'polygon': polygon_pairs}
+    else:
+        return {'status': response.status_code, 'id': None, 'polygon': None}
 
 
-def _get_tree_information(survey_id: str) -> requests.Response:
+def _get_tree_information(survey_id: str) -> dict:
 
     url = f"{survey_id}/tree_surveys/"
     api_token = os.getenv("token")
@@ -43,22 +50,30 @@ def _get_tree_information(survey_id: str) -> requests.Response:
 
     response = requests.get(base_url + url, headers=headers)
 
+    if response.status_code == 200:
+        response_data = response.json()['results']
+        return {'status': response.status_code,
+                'trees': response_data}
+    else:
+        return {'status': response.status_code,
+                'trees': None}
+
     return response
 
 
 if __name__ == '__main__':
     orchid_info = _get_orchard_info(str(argv[1]))
-    if orchid_info.status_code == 200:
+    if orchid_info['status'] == 200:
         print('Response successful')
-        survey_id = orchid_info.json()["results"][0]
+        survey_id = orchid_info['id']
     else:
         print("token state:", os.getenv("token"))
-        raise ValueError(orchid_info)
+        raise ValueError(orchid_info['status'])
     
     try:
-        tree_info = _get_tree_information(survey_id['id'])
-        print(tree_info.status_code)
-        print(tree_info.json())
+        tree_info = _get_tree_information(survey_id)
+        print(tree_info['status'])
+        print(tree_info['trees'])
     except Exception as e:
         print("Failed")
         print(survey_id)
