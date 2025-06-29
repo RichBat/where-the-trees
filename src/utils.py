@@ -2,14 +2,24 @@
 This utilities file will handle API interactions to get and post data
 '''
 
-import json
+# import json
 import os
 import requests
 from sys import argv
+# import numpy as np
 
 base_url = "https://api.aerobotics.com/farming/surveys/"
 
-def _get_orchid_info(orchard_id):
+
+def _get_orchard_info(orchard_id: str) -> requests.Response:
+    """
+    This function will query the API to get the orchard survey information.
+
+    Parameters
+    ----------
+    orchard_id:
+        The id for the specific orchard to be queried.
+    """
     url = f"?orchard_id={orchard_id}"
     print('URL', base_url + url)
     api_token = os.getenv("token")
@@ -21,7 +31,8 @@ def _get_orchid_info(orchard_id):
     response = requests.get(base_url + url, headers=headers)
     return response
 
-def _get_tree_information(survey_id):
+
+def _get_tree_information(survey_id: str) -> requests.Response:
 
     url = f"{survey_id}/tree_surveys/"
     api_token = os.getenv("token")
@@ -35,9 +46,8 @@ def _get_tree_information(survey_id):
     return response
 
 
-
 if __name__ == '__main__':
-    orchid_info = _get_orchid_info(str(argv[1]))
+    orchid_info = _get_orchard_info(str(argv[1]))
     if orchid_info.status_code == 200:
         print('Response successful')
         survey_id = orchid_info.json()["results"][0]
@@ -53,3 +63,4 @@ if __name__ == '__main__':
         print("Failed")
         print(survey_id)
         raise e
+    
