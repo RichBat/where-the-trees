@@ -6,7 +6,7 @@ from sklearn.neighbors import BallTree
 from scipy.spatial import Delaunay
 import triangle as tr
 import triangle.plot as tplot
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, LineString
 from pyproj import Transformer
 import numpy as np
 import matplotlib.pyplot as plt
@@ -111,8 +111,8 @@ def sketch_plots(tree_list):
 
 
 def sketch_triangle_areas(tree_list):
-    lower = 1.7
-    upper = 2.7
+    lower = 1.5
+    upper = 2.5
     triangle_coords = _get_coords(tree_list)
 
     tri, tri_areas = _apply_delauney(triangle_coords)
@@ -190,6 +190,77 @@ def sketch_new_triangles(tree_list):
     plt.show()
 
 
+def find_missing_trees(tree_info, num_missing):
+    """
+    This function will first establish baseline properties of the current
+    mesh of trees and then will iterate between each candidate missing tree
+    position to evaluate the impact of tree placement.
+
+    Parameters
+    ----------
+    tree_info:
+        This is the list of dictionaries to get the tree coordinates.
+    num_missing:
+        This is the number of trees currently missing.
+    """
+
+    '''
+    NOTE:
+    1. Get lat0 and long0 to use as a consistent reference point.
+    2. Get the current mesh and bad triangles (as a mask).
+    3. Using the current mesh and bad triangles, measure the good
+    triangle edge mean.
+    4. Also get the number of triangles current as a baseline.
+    5. Get the candidate new point positions.
+
+    Next:
+    1. Drop any duplicate candidate positions based on coordinate pairs (adjacent
+    triangles)
+    2. Iterate through the list of candidate points.
+        A. Create a new mesh which is original mesh + candidate point, convert using base 
+        transformer.
+        B. Check total number of triangles and if exceeding 2 then drop (should pre-flag)
+        C. Get new deviation using old area as only the triangles for the new point will
+        be new.
+        D. Calculate average length with new bad mask flag.
+        E. Measure the new average length of good triangles and return this.
+    3. Will have a mapping which is candidate point (long, lat), impact on relative length
+    4. Order mapping by impact (to converge to goal) and take top k
+
+    If there is time available:
+    The approach should be performed as nCr loops for every combination to be evaluated.
+    This will resolve potential issues when there are multiple missing trees adjacent 
+    to each other.
+    '''
+
+    pass
+
+def _get_transformer(lon, lat, lon0, lat0):
+    proj_str = f"+proj=aeqd +lat_0={lat0} +lon_0={lon0} +units=m"
+    transformer = Transformer.from_crs("EPSG:4326", proj_str, always_xy=True)
+    transformer_inv = Transformer.from_crs(proj_str, "EPSG:4326", always_xy=True)
+    return transformer, transformer_inv
+
+
+def calculate_mesh(x, y, mask=None):
+    points_xy = np.vstack([x, y]).T
+
+    tri = Delaunay(points_xy)
+
+    def triangle_area(pts):
+        A, B, C = pts
+        return 0.5 * abs(
+            (B[0] - A[0]) * (C[1] - A[1]) - (C[0] - A[0]) * (B[1] - A[1])
+        )
+
+    areas = np.array([
+        triangle_area(points_xy[simplex])
+        for simplex in tri.simplices
+    ])
+
+    return tri, areas
+
+
 def projection_test(tree_list):
     points_lonlat = _get_coords(tree_list)
     lon, lat = _get_coords2(tree_list)
@@ -225,12 +296,12 @@ def projection_test(tree_list):
     # -----------------------
     # Mark bad triangles
     # -----------------------
-    lower = 1.7
-    upper = 2.7
+    lower = 1.5
+    upper = 2.5
     deviation = areas/A_mean.mean()
     bad_mask = (deviation > lower) & (deviation < upper)
-    # threshold = 1.5  # area factor
-    # bad_mask = areas > (threshold * A_mean)
+
+    goal_length = get_average_edge_length(tri, points_xy, bad_mask)
 
     # -----------------------
     # Find midpoints of longest edges in bad triangles
@@ -261,6 +332,8 @@ def projection_test(tree_list):
         new_points_lonlat = np.vstack([mlon, mlat]).T
     else:
         new_points_lonlat = np.empty((0, 2))
+
+    print('Candidate points', np.unique(new_points_lonlat, axis=0))
 
     # -----------------------
     # Combine for new mesh
@@ -298,6 +371,32 @@ def projection_test(tree_list):
     plt.show()
 
 
+def get_average_edge_length(tri, points_xy, bad_mask):
+    good_tris = tri.simplices[~bad_mask]
+    edges = []
+    for simplex in good_tris:
+        pts = points_xy[simplex]
+        edges += [
+            (pts[0], pts[1]),
+            (pts[1], pts[2]),
+            (pts[2], pts[0])
+        ]
+    # Remove duplicate edges (by coordinates)
+    lines = [LineString([tuple(A), tuple(B)]) for A, B in edges]
+    unique_lines = []
+    seen = set()
+    for line in lines:
+        coords = tuple(sorted(line.coords))
+        if coords not in seen:
+            seen.add(coords)
+            unique_lines.append(line)
+
+    lengths = [line.length for line in unique_lines]
+    if len(lengths) == 0:
+        return 0.0
+    return np.mean(lengths)
+
+
 def new_points(tree_list):
     lower = 1.7
     upper = 2.7
@@ -332,4 +431,4 @@ if __name__ == '__main__':
         print(survey_id)
         raise e
     
-    projection_test(tree_info['trees'])
+    sketch_triangle_areas(tree_info['trees'])
