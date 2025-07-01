@@ -2,195 +2,23 @@
 The functionality will handle determining the coordinates of missing trees
 within an orchard
 '''
-from sklearn.neighbors import BallTree
 from scipy.spatial import Delaunay
-import triangle as tr
-import triangle.plot as tplot
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import LineString
 from pyproj import Transformer
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from matplotlib.collections import PolyCollection, LineCollection
 from utils import _get_orchard_info, _get_tree_information
 import os
 from sys import argv
 from typing import Tuple
 
 
-def _extract_coordinates(tree_list: list) -> np.ndarray:
-    """
-    This function will get the longitude and latitude positions per tree into radians.
-
-    Parameters
-    ----------
-    tree_list:
-        List of dictionaries for survey tree metrics.
-    """
-
-    coordinates = np.array([[np.radians(tree['lat']), np.radians(tree['lng'])]
-                            for tree in tree_list])
-    return coordinates
-
-
-def _graph_coords(tree_list: list) -> tuple:
-    lat_coords = [[tree['lat'] for tree in tree_list]]
-    lng_coords = [[tree['lng'] for tree in tree_list]]
-    return lng_coords, lat_coords
-
-
-def _graph_trees(tree_list: list):
-    lngs, lats = _graph_coords(tree_list)
-
-    plt.figure(figsize=(8, 8))
-    plt.scatter(lngs, lats, c='blue')
-
-    plt.xlabel('Longitude')
-    plt.ylabel('Latitude')
-    plt.show()
-
-
-def _get_boundary(survey_summary):
-    pass
-
-
 def _get_coords(tree_list: list):
-    coord_pairs = np.array([[tree['lat'], tree['lng']]
-                            for tree in tree_list])
-    coords = np.column_stack([coord_pairs[:, 1], coord_pairs[:, 0]])
-    return coords
-
-
-def _get_coords2(tree_list: list):
     coord_pairs = np.array([[tree['lat'], tree['lng']]
                             for tree in tree_list])
     return coord_pairs[:, 1], coord_pairs[:, 0]
 
 
-def _apply_delauney(coords: np.ndarray) -> Tuple[Delaunay, np.ndarray]:
-    tri = Delaunay(coords)
-
-    def get_triangle_areas(triangle_points):
-        A, B, C = triangle_points
-        return 0.5 * abs(
-            (B[0] - A[0]) * (C[1] - A[1]) - 
-            (C[0] - A[0]) * (B[1] - A[1])
-        )
-    
-    area_array = np.array([get_triangle_areas(coords[s]) for s in tri.simplices])
-    
-    return tri, area_array
-
-
-def _get_tree_radius():
-    """
-    This function will get each trees radius and then add the offset radius based on the 
-    average tree area + std deviation. This will allow the radius cut-off for neighbouring 
-    tree searching to be
-
-    """
-    pass
-
-
-def sketch_plots(tree_list):
-    triangle_coords = _get_coords(tree_list)
-
-    triangles, tri_areas = _apply_delauney(triangle_coords)
-
-    plt.figure(figsize=(8, 8))
-    # plt.plot(triangle_coords[:, 0], triangle_coords[:, 1], color='blue', marker='o')
-
-    for triangle in triangle_coords[triangles.simplices]:
-        t = np.vstack([triangle, triangle[0]])
-        plt.plot(t[:, 0], t[:, 1], 'k-')
-
-    plt.xlabel('Longitude')
-    plt.ylabel('Latitude')
-    plt.title('Points + Delaunay Triangulation')
-    plt.show()
-
-
-def sketch_triangle_areas(tree_list):
-    lower = 1.5
-    upper = 2.5
-    triangle_coords = _get_coords(tree_list)
-
-    tri, tri_areas = _apply_delauney(triangle_coords)
-
-    deviation = tri_areas/tri_areas.mean()
-    mask = (deviation > lower) & (deviation < upper)
-
-    triangles = np.array([triangle_coords[s] for s in tri.simplices])
-    deviation = deviation[mask]
-    triangles_coloured = triangles[mask]
-    triangles = triangles[~mask]
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    # Build a PolyCollection
-    coll = PolyCollection(triangles, facecolor='white', edgecolor='k')
-
-    ax.add_collection(coll)
-
-    colour_coll = PolyCollection(triangles_coloured, array=deviation, cmap='viridis', edgecolor='k')
-
-    ax.add_collection(colour_coll)
-
-    ax.autoscale()
-    ax.set_aspect('equal')
-
-    plt.colorbar(colour_coll, ax=ax, label='Area / Mean Area')
-    plt.title('Delaunay Triangles Colored by Relative Area')
-    plt.show()
-
-
-def sketch_new_triangles(tree_list):
-    lower = 1.7
-    upper = 2.7
-    triangle_coords = _get_coords(tree_list)
-
-    tri, tri_areas = _apply_delauney(triangle_coords)
-
-    deviation = tri_areas/tri_areas.mean()
-    bad_mask = (deviation > lower) & (deviation < upper)
-
-    longest_edges = []
-    longest_lengths = []
-    other_edges = []
-
-    for is_bad, simplex in zip(bad_mask, tri.simplices):
-        if not is_bad:
-            continue  # skip good triangles
-
-        pts = triangle_coords[simplex]
-        A, B, C = pts
-        edges = [(A, B), (B, C), (C, A)]
-        lengths = [np.linalg.norm(e[1] - e[0]) for e in edges]
-        longest_idx = np.argmax(lengths)
-        longest_edges.append(edges[longest_idx])
-        longest_lengths.append(lengths[longest_idx])
-        other_edges.extend([edges[i] for i in range(3) if i != longest_idx])
-    
-    fig, ax = plt.subplots(figsize=(8, 8))
-
-    # Longest edges (color by length)
-    lc_long = LineCollection(longest_edges, colors='red', linewidths=2)
-    ax.add_collection(lc_long)
-
-    # Other edges of bad triangles, neutral
-    lc_other = LineCollection(other_edges, colors='grey', linewidths=1)
-    ax.add_collection(lc_other)
-
-    # Points for context
-    ax.plot(triangle_coords[:, 0], triangle_coords[:, 1], 'ko', markersize=3)
-
-    plt.colorbar(lc_long, ax=ax, label='Longest Edge Length')
-    ax.autoscale()
-    ax.set_aspect('equal')
-    plt.title('Longest Edges of Bad Triangles (Red)')
-    plt.show()
-
-
-def find_missing_trees(tree_info, num_missing):
+def find_missing_trees(tree_info, num_missing) -> np.ndarray:
     """
     This function will first establish baseline properties of the current
     mesh of trees and then will iterate between each candidate missing tree
@@ -203,38 +31,81 @@ def find_missing_trees(tree_info, num_missing):
     num_missing:
         This is the number of trees currently missing.
     """
+    # combined_points_lonlat = np.vstack([points_lonlat, new_points_lonlat])
+    
+    lon, lat = _get_coords(tree_info)
+    initial_points = np.column_stack([lon, lat])
+    lon0, lat0 = lon.mean(), lat.mean()
 
-    '''
-    NOTE:
-    1. Get lat0 and long0 to use as a consistent reference point.
-    2. Get the current mesh and bad triangles (as a mask).
-    3. Using the current mesh and bad triangles, measure the good
-    triangle edge mean.
-    4. Also get the number of triangles current as a baseline.
-    5. Get the candidate new point positions.
+    trans, inv_trans = _get_transformer(lon0, lat0)
+    x, y = trans.transform(lon, lat)
 
-    Next:
-    1. Drop any duplicate candidate positions based on coordinate pairs (adjacent
-    triangles)
-    2. Iterate through the list of candidate points.
-        A. Create a new mesh which is original mesh + candidate point, convert using base 
-        transformer.
-        B. Check total number of triangles and if exceeding 2 then drop (should pre-flag)
-        C. Get new deviation using old area as only the triangles for the new point will
-        be new.
-        D. Calculate average length with new bad mask flag.
-        E. Measure the new average length of good triangles and return this.
-    3. Will have a mapping which is candidate point (long, lat), impact on relative length
-    4. Order mapping by impact (to converge to goal) and take top k
+    goal_length, candidate_points = get_mean_edge_length_with_candidates(x, y, True)
+    candidate_coords = _convert_metres_to_degrees(inv_trans, candidate_points)
+    candidate_combo_seq = get_candidate_iterations(candidate_coords, num_missing)
 
-    If there is time available:
-    The approach should be performed as nCr loops for every combination to be evaluated.
-    This will resolve potential issues when there are multiple missing trees adjacent 
-    to each other.
-    '''
+    iterative_edges = []
 
-    pass
+    for k in candidate_combo_seq:
+        combined_pts = np.vstack([initial_points, k])
+        x, y = trans.transform(combined_pts[:, 0], combined_pts[:, 1])
+        combo_edge_mean, _ = get_mean_edge_length_with_candidates(x, y)
+        iterative_edges.append(abs(combo_edge_mean - goal_length))
 
+    smallest_edge = np.argmin(np.array(iterative_edges))
+    best_candidate = np.array(candidate_combo_seq[smallest_edge])
+    return best_candidate
+
+
+def get_candidate_iterations(candidates: np.ndarray, missing_trees: int) -> list:
+    """
+    This function makes unique combinations of candidate coords where the number of
+    coordinates per combination is equal to missing_trees
+    """
+    prospect_cnt = len(candidates)
+    sequences = []
+
+    def _build_sequence(current_combo, start):
+        if len(current_combo) == missing_trees:
+            sequences.append(current_combo)
+            return
+        for i in range(start, prospect_cnt):
+            _build_sequence(current_combo + [candidates[i]], i + 1)
+
+    _build_sequence([], 0)
+    return sequences
+
+
+def get_mean_edge_length_with_candidates(x: np.ndarray, y: np.ndarray, initial_run: bool = False) -> Tuple[float, np.ndarray] | Tuple[float, None]:
+    """
+    This function will receive transformed coordinates (into metres)
+    and will determine the average length of the triangle edges.
+    An optional flag is provided so that the initial run will provide
+    candidate missing tree locations.
+
+    Parameters
+    ----------
+    x:
+        The x-axis position in metres.
+    y:
+        The y-axis position in metres.
+    intial_run: (optional)
+        The flag for the initial run to also return candidate triangles
+    
+    """
+    points_xy = np.vstack([x, y]).T
+
+    triangles, areas = calculate_mesh(x, y)
+    bad_mask = _get_bad_mask(areas, 1.7, 2.2)
+
+    goal_length = get_average_edge_length(triangles, points_xy, bad_mask)
+    
+    if initial_run:
+        candidate_points = _get_midpoints(points_xy, triangles, bad_mask)
+        return goal_length, candidate_points
+    else:
+        return goal_length, None
+    
 
 def _get_transformer(lon0: float, lat0: float) -> Tuple[Transformer, Transformer]:
     """
@@ -254,7 +125,7 @@ def _get_transformer(lon0: float, lat0: float) -> Tuple[Transformer, Transformer
     return transformer, transformer_inv
 
 
-def calculate_mesh(x, y):
+def calculate_mesh(x: np.ndarray, y: np.ndarray) -> Tuple[Delaunay, np.ndarray]:
     """
     This function will calculate the Delaunay Triangulated mesh
     for the provided coordinate system.
@@ -311,7 +182,12 @@ def _get_bad_mask(areas, lower, upper):
     mask = mask_lower & mask_upper
     return mask
 
-def get_average_edge_length(tri, points_xy, bad_mask):
+
+def get_average_edge_length(tri: Delaunay, points_xy: np.ndarray, bad_mask: np.ndarray) -> np.floating:
+    """
+    This function gets the average triangle edge length of all good triangles.
+    The mean edge length is returned as a float
+    """
     good_tris = tri.simplices[~bad_mask]
     edges = []
     for simplex in good_tris:
@@ -333,7 +209,7 @@ def get_average_edge_length(tri, points_xy, bad_mask):
 
     lengths = [line.length for line in unique_lines]
     if len(lengths) == 0:
-        return 0.0
+        return np.float64(0.0)
     return np.mean(lengths)
 
 
@@ -384,128 +260,12 @@ def _convert_metres_to_degrees(inverse_trans: Transformer, points: np.ndarray):
         mx, my = points.T
         mlon, mlat = inverse_trans.transform(mx, my)
         degree_coords = np.vstack([mlon, mlat]).T
-        raise degree_coords
+        return degree_coords
     else:
         raise ValueError('There are no new points to convert.')
 
 
-# to add new points to old combined_points_lonlat = np.vstack([points_lonlat, new_points_lonlat])
-# !!!!!!!!!!!! We are here in the code, now need to combine these into a function, have it generate once for a base, then loop with new point combos
-
-
-def projection_test(tree_list):
-    points_lonlat = _get_coords(tree_list)
-    lon, lat = _get_coords2(tree_list)
-    lon0, lat0 = lon.mean(), lat.mean()
-    proj_str = f"+proj=aeqd +lat_0={lat0} +lon_0={lon0} +units=m"
-    transformer = Transformer.from_crs("EPSG:4326", proj_str, always_xy=True)
-    transformer_inv = Transformer.from_crs(proj_str, "EPSG:4326", always_xy=True)
-
-    x, y = transformer.transform(lon, lat)
-    points_xy = np.vstack([x, y]).T
-
-    # -----------------------
-    # Delaunay
-    # -----------------------
-    tri = Delaunay(points_xy)
-
-    # -----------------------
-    # Compute areas
-    # -----------------------
-    def triangle_area(pts):
-        A, B, C = pts
-        return 0.5 * abs(
-            (B[0] - A[0]) * (C[1] - A[1]) - (C[0] - A[0]) * (B[1] - A[1])
-        )
-
-    areas = np.array([
-        triangle_area(points_xy[simplex])
-        for simplex in tri.simplices
-    ])
-
-    A_mean = areas.mean()
-
-    # -----------------------
-    # Mark bad triangles
-    # -----------------------
-    lower = 1.7
-    upper = 2.2
-    deviation = areas/A_mean
-    bad_mask = (deviation > lower) & (deviation < upper)
-    print('Mask type', type(bad_mask))
-    goal_length = get_average_edge_length(tri, points_xy, bad_mask)
-
-    # -----------------------
-    # Find midpoints of longest edges in bad triangles
-    # -----------------------
-    new_points_xy = []
-
-    for simplex, is_bad in zip(tri.simplices, bad_mask):
-        if not is_bad:
-            continue
-        pts = points_xy[simplex]
-        edges = [
-            (pts[0], pts[1]),
-            (pts[1], pts[2]),
-            (pts[2], pts[0])
-        ]
-        lengths = [np.linalg.norm(e1 - e2) for e1, e2 in edges]
-        idx_longest = np.argmax(lengths)
-        A, B = edges[idx_longest]
-        M = (A + B) / 2
-        new_points_xy.append(M)
-
-    new_points_xy = np.array(new_points_xy)
-    print('Candidate Points in Metres', new_points_xy)
-    # Transform new points back to lon/lat
-    if len(new_points_xy) > 0:
-        mx, my = new_points_xy.T
-        mlon, mlat = transformer_inv.transform(mx, my)
-        new_points_lonlat = np.vstack([mlon, mlat]).T
-    else:
-        new_points_lonlat = np.empty((0, 2))
-
-    print('Candidate points', np.unique(new_points_lonlat, axis=0))
-
-    # -----------------------
-    # Combine for new mesh
-    # -----------------------
-    combined_points_lonlat = np.vstack([points_lonlat, new_points_lonlat])
-
-    # Project again for Delaunay (or just reuse xy)
-    x2, y2 = transformer.transform(combined_points_lonlat[:, 0], combined_points_lonlat[:, 1])
-    combined_points_xy = np.vstack([x2, y2]).T
-
-    tri2 = Delaunay(combined_points_xy)
-
-    # -----------------------
-    # Plot
-    # -----------------------
-    fig, ax = plt.subplots(figsize=(10, 10))
-
-    # Plot new mesh triangles
-    for simplex in tri2.simplices:
-        pts = combined_points_lonlat[simplex]
-        poly = Polygon(pts, edgecolor='gray', facecolor='none')
-        ax.add_patch(poly)
-
-    # Plot original points
-    ax.plot(points_lonlat[:, 0], points_lonlat[:, 1], 'ko', label='Original points')
-
-    # Plot new points in red
-    if len(new_points_lonlat) > 0:
-        ax.plot(new_points_lonlat[:, 0], new_points_lonlat[:, 1], 'ro', label='New midpoints')
-
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.set_title("New Delaunay mesh with midpoints for bad triangles")
-    ax.legend()
-    plt.show()
-
-
 if __name__ == '__main__':
-    # print(tr.__file__)
-    # print(dir(tr))
     orchid_info = _get_orchard_info(str(argv[1]))
     if orchid_info['status'] == 200:
         print('Response successful')
@@ -522,4 +282,4 @@ if __name__ == '__main__':
         print(survey_id)
         raise e
     
-    projection_test(tree_info['trees'])
+    find_missing_trees(tree_info['trees'], 4)
