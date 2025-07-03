@@ -1,9 +1,8 @@
+Flask
+gunicorn
 requests
 numpy
-Flask
-scikit-learn
 matplotlib
 scipy
-triangle
 shapely
 pyproj
