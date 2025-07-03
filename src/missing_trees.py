@@ -54,6 +54,7 @@ def find_missing_trees(tree_info, num_missing) -> np.ndarray:
 
     smallest_edge = np.argmin(np.array(iterative_edges))
     best_candidate = np.array(candidate_combo_seq[smallest_edge])
+
     return best_candidate
 
 
@@ -266,15 +267,14 @@ def _convert_metres_to_degrees(inverse_trans: Transformer, points: np.ndarray):
 
 
 if __name__ == '__main__':
-    orchid_info = _get_orchard_info(str(argv[1]))
+    orchard_id = int(argv[1])
+    orchid_info = _get_orchard_info(orchard_id)
     if orchid_info['status'] == 200:
         print('Response successful')
         survey_id = orchid_info['id']
-        polygon_coords = orchid_info['polygon']
     else:
         print("token state:", os.getenv("token"))
         raise ValueError(orchid_info['status'])
-    
     try:
         tree_info = _get_tree_information(survey_id)
     except Exception as e:
@@ -282,4 +282,5 @@ if __name__ == '__main__':
         print(survey_id)
         raise e
     
-    find_missing_trees(tree_info['trees'], 4)
+    missing_trees = find_missing_trees(tree_info['trees'], 4)
+    
