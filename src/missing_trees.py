@@ -2,7 +2,7 @@
 The functionality will handle determining the coordinates of missing trees
 within an orchard
 '''
-from .utils import get_aero_tree_info
+from src.utils import get_aero_tree_info
 from scipy.spatial import Delaunay
 from shapely.geometry import LineString
 from pyproj import Transformer

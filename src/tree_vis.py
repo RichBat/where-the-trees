@@ -1,20 +1,22 @@
+"""
+This file contains a range of different visualisation functions for tree coordinate grids, triangularisation,
+triangularised tree area deviation and tree differences
+"""
+from src.utils import get_aero_tree_info
+import src.missing_trees as mt
 from scipy.spatial import Delaunay
 from matplotlib.patches import Polygon
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import PolyCollection, LineCollection
 from typing import Tuple
-from .missing_trees import _get_coords
 
 
-def _graph_coords(tree_list: list) -> tuple:
-    lat_coords = [[tree['lat'] for tree in tree_list]]
-    lng_coords = [[tree['lng'] for tree in tree_list]]
-    return lng_coords, lat_coords
-
-
-def _graph_trees(tree_list: list):
-    lngs, lats = _graph_coords(tree_list)
+def graph_trees(tree_list):
+    """
+    This function plots the tree coordinates.
+    """
+    lngs, lats = mt._get_coords(tree_list)
 
     plt.figure(figsize=(8, 8))
     plt.scatter(lngs, lats, c='blue')
@@ -42,13 +44,15 @@ def _apply_delauney(coords: np.ndarray) -> Tuple[Delaunay, np.ndarray]:
 
 
 def sketch_plots(tree_list):
-    long, lat = _get_coords(tree_list)
+    """
+    This functions plots the Delaunay triangularisation for the tree coordinates.
+    """
+    long, lat = mt._get_coords(tree_list)
     triangle_coords = np.column_stack([long, lat])
 
     triangles, tri_areas = _apply_delauney(triangle_coords)
 
     plt.figure(figsize=(8, 8))
-    # plt.plot(triangle_coords[:, 0], triangle_coords[:, 1], color='blue', marker='o')
 
     for triangle in triangle_coords[triangles.simplices]:
         t = np.vstack([triangle, triangle[0]])
@@ -60,10 +64,11 @@ def sketch_plots(tree_list):
     plt.show()
 
 
-def sketch_triangle_areas(tree_list):
-    lower = 1.5
-    upper = 2.5
-    long, lat = _get_coords(tree_list)
+def sketch_triangle_areas(tree_list, lower=1.8, upper=2.2, no_mask=False):
+    """
+    This function gets the triangle area deviations by colour coding.
+    """
+    long, lat = mt._get_coords(tree_list)
     triangle_coords = np.column_stack([long, lat])
 
     tri, tri_areas = _apply_delauney(triangle_coords)
@@ -72,19 +77,24 @@ def sketch_triangle_areas(tree_list):
     mask = (deviation > lower) & (deviation < upper)
 
     triangles = np.array([triangle_coords[s] for s in tri.simplices])
-    deviation = deviation[mask]
-    triangles_coloured = triangles[mask]
-    triangles = triangles[~mask]
+
     fig, ax = plt.subplots(figsize=(8, 8))
 
-    # Build a PolyCollection
-    coll = PolyCollection(triangles, facecolor='white', edgecolor='k')
+    if no_mask:
+        colour_coll = PolyCollection(triangles, array=deviation, cmap='viridis', edgecolor='k')
+        ax.add_collection(colour_coll)
+    else:
+        deviation = deviation[mask]
+        triangles_coloured = triangles[mask]
+        triangles = triangles[~mask]
+        # Build a PolyCollection
+        coll = PolyCollection(triangles, facecolor='white', edgecolor='k')
 
-    ax.add_collection(coll)
+        ax.add_collection(coll)
 
-    colour_coll = PolyCollection(triangles_coloured, array=deviation, cmap='viridis', edgecolor='k')
+        colour_coll = PolyCollection(triangles_coloured, array=deviation, cmap='viridis', edgecolor='k')
 
-    ax.add_collection(colour_coll)
+        ax.add_collection(colour_coll)
 
     ax.autoscale()
     ax.set_aspect('equal')
@@ -94,10 +104,26 @@ def sketch_triangle_areas(tree_list):
     plt.show()
 
 
-def sketch_new_triangles(tree_list):
-    lower = 1.7
-    upper = 2.7
-    long, lat = _get_coords(tree_list)
+def sketch_bad_triangle_long_edge(tree_list, lower: float = 1.7, upper: float = 2.2):
+    """
+    A function to plot the triangularisation between the tree coordinates
+    with the longest triangle edges, of the bad triangles, highlighted.
+
+    The triangles with an area that deviates from the mean area by a specific
+    ratio is flagged as a bad triangle if it falls between the lower & upper
+    bound.
+
+    Parameters
+    ----------
+    tree_list:
+        The tree coordinate information which is expected to be a list of
+        dictionaries.
+    lower:
+        The lower deviation bound for bad triangle masking.
+    upper:
+        The upper deviation bound for bad triangle masking.
+    """
+    long, lat = mt._get_coords(tree_list)
     triangle_coords = np.column_stack([long, lat])
 
     tri, tri_areas = _apply_delauney(triangle_coords)
@@ -142,14 +168,28 @@ def sketch_new_triangles(tree_list):
     plt.show()
 
 
-def plot_points(original_pts, candidate_coords, transformer):
+def plot_points(orchard_id, all_candidates=True):
     '''
     This function can be used to plot the coordinates of the proposed missing trees.
+    These are shown as red points on the plot while the original trees are plotted in
+    gray.
     '''
+    trees, missing = get_aero_tree_info(orchard_id)
+    lon, lat = mt._get_coords(trees)
+    lon0, lat0 = lon.mean(), lat.mean()
+    trans, inv_trans = mt._get_transformer(lon0, lat0)
+    original_pts = np.column_stack([lon, lat])
+    if all_candidates:
+        x, y = trans.transform(lon, lat)
+        goal_length, candidate_points = mt.get_mean_edge_length_with_candidates(x, y, True)
+        candidate_coords = mt._convert_metres_to_degrees(inv_trans, candidate_points)
+    else:
+        candidate_coords = mt.find_missing_trees(orchard_id)
     combined_points_lonlat = np.vstack([original_pts, candidate_coords])
 
     # Project again for Delaunay (or just reuse xy)
-    x2, y2 = transformer.transform(combined_points_lonlat[:, 0], combined_points_lonlat[:, 1])
+    mt._convert_metres_to_degrees
+    x2, y2 = trans.transform(combined_points_lonlat[:, 0], combined_points_lonlat[:, 1])
     combined_points_xy = np.vstack([x2, y2]).T
 
     tri2 = Delaunay(combined_points_xy)
@@ -177,3 +217,6 @@ def plot_points(original_pts, candidate_coords, transformer):
     ax.set_title("New Delaunay mesh with midpoints for bad triangles")
     ax.legend()
     plt.show()
+
+
+
