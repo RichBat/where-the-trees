@@ -2,11 +2,9 @@
 This utilities file will handle API interactions to get and post data
 '''
 
-# import json
 import os
 import requests
 from sys import argv
-# import numpy as np
 
 base_url = "https://api.aerobotics.com/farming/surveys/"
 
@@ -84,9 +82,7 @@ if __name__ == '__main__':
         print('Response successful')
         survey_id = orchid_info['id']
     else:
-        print("token state:", os.getenv("token"))
         raise ValueError(orchid_info['status'])
-    
     try:
         tree_info = _get_tree_information(survey_id)
         print(tree_info['status'])

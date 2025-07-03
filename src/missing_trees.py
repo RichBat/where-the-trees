@@ -2,12 +2,11 @@
 The functionality will handle determining the coordinates of missing trees
 within an orchard
 '''
+from .utils import get_aero_tree_info
 from scipy.spatial import Delaunay
 from shapely.geometry import LineString
 from pyproj import Transformer
 import numpy as np
-from utils import _get_orchard_info, _get_tree_information
-import os
 from sys import argv
 from typing import Tuple
 
@@ -18,7 +17,7 @@ def _get_coords(tree_list: list):
     return coord_pairs[:, 1], coord_pairs[:, 0]
 
 
-def find_missing_trees(tree_info, num_missing) -> np.ndarray:
+def find_missing_trees(orchard_id: int) -> np.ndarray:
     """
     This function will first establish baseline properties of the current
     mesh of trees and then will iterate between each candidate missing tree
@@ -26,13 +25,13 @@ def find_missing_trees(tree_info, num_missing) -> np.ndarray:
 
     Parameters
     ----------
-    tree_info:
-        This is the list of dictionaries to get the tree coordinates.
-    num_missing:
-        This is the number of trees currently missing.
+    orchard_id:
+        The orchard id which will be used to ascertain the tree survey coordinates
+        and the number of missing trees
     """
-    # combined_points_lonlat = np.vstack([points_lonlat, new_points_lonlat])
-    
+
+    tree_info, num_missing = get_aero_tree_info(orchard_id)
+
     lon, lat = _get_coords(tree_info)
     initial_points = np.column_stack([lon, lat])
     lon0, lat0 = lon.mean(), lat.mean()
@@ -268,19 +267,4 @@ def _convert_metres_to_degrees(inverse_trans: Transformer, points: np.ndarray):
 
 if __name__ == '__main__':
     orchard_id = int(argv[1])
-    orchid_info = _get_orchard_info(orchard_id)
-    if orchid_info['status'] == 200:
-        print('Response successful')
-        survey_id = orchid_info['id']
-    else:
-        print("token state:", os.getenv("token"))
-        raise ValueError(orchid_info['status'])
-    try:
-        tree_info = _get_tree_information(survey_id)
-    except Exception as e:
-        print("Failed")
-        print(survey_id)
-        raise e
-    
-    missing_trees = find_missing_trees(tree_info['trees'], 4)
-    
+    print(find_missing_trees(orchard_id))

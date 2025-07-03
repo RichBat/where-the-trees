@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import PolyCollection, LineCollection
 from typing import Tuple
-from missing_trees import _get_coords
+from .missing_trees import _get_coords
 
 
 def _graph_coords(tree_list: list) -> tuple:
